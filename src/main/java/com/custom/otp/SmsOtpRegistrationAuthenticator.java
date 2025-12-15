@@ -22,31 +22,27 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
         UserModel user = context.getUser();
 
         if (user == null) {
-            // Fallback: Try to get user from session if context doesn't have it
+            // get user from session if not in context
             user = authSession.getAuthenticatedUser();
         }
 
         if (user == null) {
-            // Should not happen if placed after Registration User Profile
             context.failure(AuthenticationFlowError.INVALID_USER);
             return;
         }
 
-        // 1. BLOCK USER UNTIL VERIFIED
-        // We add unverified-user-block action. This blocks them from accessing the app
-        // if they abandon registration using our custom error page.
-        // We remove this action immediately when they verify SMS OTP below.
+        // block them from accessing the page if they didnt complete OTP verification
         user.setEnabled(true);
         user.addRequiredAction("unverified-user-block");
         user.setSingleAttribute("phone_verified", "false");
 
-        // 2. CHECK IF RESUMING
+        // CHECK IF RESUMING
         if ("true".equals(authSession.getAuthNote(OTP_SENT))) {
             context.challenge(context.form().createForm("sms-otp-form.ftl"));
             return;
         }
 
-        // 3. SEND OTP
+        // SEND OTP
         String phone = user.getFirstAttribute("phone_number");
         if (phone == null || phone.isBlank()) {
             context.failure(AuthenticationFlowError.INVALID_USER);
@@ -69,8 +65,7 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
         String storedOtp = context.getAuthenticationSession().getAuthNote(OTP_NOTE);
 
         if (storedOtp == null || !storedOtp.equals(inputOtp)) {
-            // Challenge again (Retry).
-            // Since requiresUser() is false, Keycloak allows this even if user is disabled.
+            // Retry if they give wrong OTP
             context.challenge(
                     context.form()
                             .setError("Invalid OTP code")
@@ -87,10 +82,9 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
         if (user != null) {
             user.setSingleAttribute("phone_verified", "true");
 
-            // 4. VERIFIED: REMOVE BLOCKING ACTION
+            // remove login restrictions
             user.removeRequiredAction("unverified-user-block");
-            // user.setEmailVerified(true); // Optional: mark email as verified if you trust
-            // the flow
+            // user.setEmailVerified(true); // to be marked if i trust the flow more
             user.setEnabled(true);
         }
 
@@ -100,7 +94,7 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
         context.success();
     }
 
-    // CRITICAL: This allows the authenticator to run even if the user is DISABLED.
+    // Run even if user is disabled
     @Override
     public boolean requiresUser() {
         return false;
@@ -124,7 +118,7 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
     }
 
     private void sendOtp(String phone, String otp) {
-        // Log it (or replace with SMS provider)
+        // to be changed to Afro messaging interface
         org.jboss.logging.Logger.getLogger(SmsOtpRegistrationAuthenticator.class)
                 .infof("Sending OTP to %s: %s", phone, otp);
     }

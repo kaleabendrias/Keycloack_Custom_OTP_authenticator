@@ -37,7 +37,7 @@ public class SmsOtpRegistrationFormAction implements FormAction {
             return;
         }
 
-        // Cleanup stale unverified users to avoid "User already exists" error
+        // delete unverified users, to prevent email already exists when registering
         KeycloakSession session = context.getSession();
         RealmModel realm = context.getRealm();
         UserModel existingUser = null;
@@ -50,13 +50,10 @@ public class SmsOtpRegistrationFormAction implements FormAction {
         }
 
         if (existingUser != null) {
-            // Check if this is a stale unverified registration
-            // We assume that if "phone_verified" is explicitly "true", they are a valid
-            // user.
-            // If they are missing the attribute or it is false, we can overwrite/cleanup.
+            // Check if this is unfinished registration
             String isVerified = existingUser.getFirstAttribute("phone_verified");
             if (!"true".equals(isVerified)) {
-                // Delete the stale user so registration can proceed
+                // Delete the unfinished user so registration can proceed
                 session.users().removeUser(realm, existingUser);
             }
         }
