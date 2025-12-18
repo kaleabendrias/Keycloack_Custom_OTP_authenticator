@@ -81,10 +81,29 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
     @Override
     public void action(AuthenticationFlowContext context) {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
-        String inputOtp = formData.getFirst("otp_code");
-        String storedOtp = context.getAuthenticationSession().getAuthNote(OTP_NOTE);
 
         long expiryTimeMs = 1 * 60 * 1000;
+
+        // if user wants to resend otp
+        if (formData.containsKey("resend")) {
+            if (System.currentTimeMillis()
+                    - Long.parseLong(context.getAuthenticationSession().getAuthNote("created_at")) < expiryTimeMs) {
+                context.challenge(
+                        context.form().setError("Please wait before resending").createForm("sms-otp-form.ftl"));
+                return;
+            }
+            String phone = context.getUser().getFirstAttribute("phone_number");
+            String request_id = context.getAuthenticationSession().getAuthNote("request_id");
+            String otp = generateOtp();
+            sendOtp(phone, otp, request_id);
+            context.getAuthenticationSession().setAuthNote(OTP_NOTE, otp);
+            context.getAuthenticationSession().setAuthNote(OTP_SENT, "true");
+            context.getAuthenticationSession().setAuthNote("created_at", String.valueOf(System.currentTimeMillis()));
+            context.challenge(context.form().createForm("sms-otp-form.ftl"));
+            return;
+        }
+        String inputOtp = formData.getFirst("otp_code");
+        String storedOtp = context.getAuthenticationSession().getAuthNote(OTP_NOTE);
 
         boolean isExpired = (System.currentTimeMillis()
                 - Long.parseLong(context.getAuthenticationSession().getAuthNote("created_at"))) > expiryTimeMs;
