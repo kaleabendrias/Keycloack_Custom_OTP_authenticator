@@ -17,6 +17,13 @@ import java.util.UUID;
 
 public class SmsOtpRegistrationAuthenticator implements Authenticator {
 
+    // private final KafkaProducer<String, String> producer;
+
+    // public SmsOtpRegistrationAuthenticator(KafkaProducer<String, String>
+    // producer) {
+    // this.producer = producer;
+    // }
+
     public static final String OTP_NOTE = "sms_registration_otp";
     public static final String OTP_SENT = "sms_registration_otp_sent";
 
@@ -66,6 +73,7 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
 
         authSession.setAuthNote(OTP_NOTE, otp);
         authSession.setAuthNote(OTP_SENT, "true");
+        authSession.setAuthNote("created_at", String.valueOf(System.currentTimeMillis()));
 
         context.challenge(context.form().createForm("sms-otp-form.ftl"));
     }
@@ -75,6 +83,23 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         String inputOtp = formData.getFirst("otp_code");
         String storedOtp = context.getAuthenticationSession().getAuthNote(OTP_NOTE);
+
+        long expiryTimeMs = 1 * 60 * 1000;
+
+        boolean isExpired = (System.currentTimeMillis()
+                - Long.parseLong(context.getAuthenticationSession().getAuthNote("created_at"))) > expiryTimeMs;
+
+        if (isExpired) {
+            // retry if OTP expired
+            context.getAuthenticationSession().removeAuthNote(OTP_NOTE);
+            context.getAuthenticationSession().removeAuthNote(OTP_SENT);
+            // resend OTP again with button resend added
+            context.challenge(
+                    context.form()
+                            .setError("OTP expired")
+                            .createForm("sms-otp-form.ftl"));
+            return;
+        }
 
         if (storedOtp == null || !storedOtp.equals(inputOtp)) {
             // Retry if they give wrong OTP
@@ -132,21 +157,31 @@ public class SmsOtpRegistrationAuthenticator implements Authenticator {
     private void sendOtp(String phone, String otp, String request_id) {
         // org.jboss.logging.Logger.getLogger(SmsOtpRegistrationAuthenticator.class)
         // .infof("Sending OTP to %s: %s", phone, otp);
-        Properties props = new Properties();
-        props.put("bootstrap.servers", System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"));
-        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        props.put("acks", System.getenv().getOrDefault("KAFKA_ACKS", "all"));
-        props.put("request.timeout.ms", System.getenv().getOrDefault("KAFKA_REQUEST_TIMEOUT_MS", "30000"));
-        props.put("retries", System.getenv().getOrDefault("KAFKA_RETRIES", "3"));
+        // Properties props = new Properties();
+        // props.put("bootstrap.servers",
+        // System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"));
+        // props.put("key.serializer",
+        // "org.apache.kafka.common.serialization.StringSerializer");
+        // props.put("value.serializer",
+        // "org.apache.kafka.common.serialization.StringSerializer");
+        // props.put("acks", System.getenv().getOrDefault("KAFKA_ACKS", "all"));
+        // props.put("request.timeout.ms",
+        // System.getenv().getOrDefault("KAFKA_REQUEST_TIMEOUT_MS", "30000"));
+        // props.put("retries", System.getenv().getOrDefault("KAFKA_RETRIES", "3"));
 
-        try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
-            producer.send(new ProducerRecord<>(System.getenv().getOrDefault("KAFKA_OTP_TOPIC", "otp_registrations"),
-                    request_id, phone + ":" + otp));
-        } catch (Exception e) {
-            org.jboss.logging.Logger.getLogger(getClass())
-                    .error("Failed to publish OTP to Kafka", e);
-        }
+        // try (KafkaProducer<String, String> producer = new KafkaProducer<>(props)) {
+        // producer.send(new
+        // ProducerRecord<>(System.getenv().getOrDefault("KAFKA_OTP_TOPIC",
+        // "otp_registrations"),
+        // request_id, phone + ":" + otp)); // obj
+        // } catch (Exception e) {
+        // org.jboss.logging.Logger.getLogger(getClass())
+        // .error("Failed to publish OTP to Kafka", e);
+        // } // self contained keycloak deployment and env't vars
+        // internally kafka connects to sms service
 
+        KafkaProducerProvider.getInstance()
+                .send(new ProducerRecord<>(System.getenv().getOrDefault("KAFKA_OTP_TOPIC", "otp_registrations"),
+                        request_id, phone + ":" + otp));
     }
 }
